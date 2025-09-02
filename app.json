@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "checkey",
+    "slug": "checkey",
+    "owner": "nofuncho",
+    "scheme": "checkey",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.checkey.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.checkey.app",
+      "softwareKeyboardLayoutMode": "pan"   
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": ["expo-router", "expo-web-browser"]
+  }
+}
