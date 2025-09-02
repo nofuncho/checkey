@@ -13,7 +13,7 @@ import QuickRangeBar from '../components/QuickRangeBar';
 import { useAppStore } from '../lib/store';
 import AuthGate from '../components/AuthGate';
 import { setupNotificationsOnce, subscribeReminderToChat, scheduleDailyDigests } from '../lib/notify';
-import { fetchSchedulesRange } from '../lib/data';
+import { fetchSchedulesRange, getUserTasks } from '../lib/data'; // ✅ getUserTasks 추가
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TOPBAR_H = 56; // _layout.js의 TopBar 높이와 일치시켜 주세요.
@@ -95,7 +95,7 @@ export default function Index() {
     return () => unsubscribe?.();
   }, [addMessage]);
 
-  // ✅ 빠른 기간 버튼 핸들러 (로그 + 빈 결과 처리 포함)
+  // ✅ 빠른 기간 버튼 핸들러 (스케줄 + 할 일 같이 보여주기)
   const handleQuickPick = async (phrase) => {
     const ts = Date.now();
     addMessage({ id: String(ts), role: 'user', text: phrase, ts });
@@ -140,21 +140,40 @@ export default function Index() {
         end: range.end?.toISOString?.(),
       });
 
-      // 3) Firestore에서 스케줄 가져오기
+      // 3) Firestore에서 스케줄 + 할 일 함께 가져오기
       if (user?.userId && range.start && range.end) {
-        const items = await fetchSchedulesRange(user.userId, range.start, range.end);
-        console.log('[QuickPick] fetched items=', items?.length, items);
+        const [items, allTasks] = await Promise.all([
+          fetchSchedulesRange(user.userId, range.start, range.end),
+          getUserTasks(user.userId), // pending 전부
+        ]);
+        console.log('[QuickPick] fetched schedules=', items?.length, items);
+        console.log('[QuickPick] fetched tasks(all)=', allTasks?.length);
 
-        if (Array.isArray(items) && items.length > 0) {
+        // 범위 내 할 일만 필터링
+        const sMs = range.start.getTime();
+        const eMs = range.end.getTime();
+        const tasksInRange = (allTasks || [])
+          .filter((t) => {
+            const ts = t?.dueDate?.toMillis?.()
+              ?? (t?.dueDate instanceof Date ? t.dueDate.getTime()
+              : t?.dueDate ? new Date(t.dueDate).getTime() : null);
+            if (ts == null) {
+              // dueDate가 없는 pending task는 "오늘"일 때만 보여주는 임시 정책
+              return /오늘/.test(range.label || '');
+            }
+            return ts >= sMs && ts <= eMs;
+          })
+          .map((t) => ({ title: t.title }));
+
+        if ((items?.length || 0) + (tasksInRange?.length || 0) > 0) {
           addMessage({
             id: String(ts + 1),
             role: 'assistant',
             type: 'schedule_summary',
-            card: { title: range.label, items },
+            card: { title: range.label, items, tasks: tasksInRange }, // ✅ 할 일 함께 전달
             ts: ts + 1,
           });
         } else {
-          // 빈 결과 안내
           addMessage({
             id: String(ts + 2),
             role: 'assistant',
@@ -203,7 +222,7 @@ export default function Index() {
               ref={listRef}
               data={messages}
               keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => (
+              renderItem={({ item }) =>
                 item?.kind === 'confirmCard' ? (
                   <ConfirmCard
                     card={item.card}
@@ -213,7 +232,7 @@ export default function Index() {
                 ) : (
                   <MessageBubble item={item} />
                 )
-              )} // ✅ 인라인으로 변경: renderItem 변수 의존 제거
+              } // ✅ 인라인 renderItem
               ListHeaderComponent={<OnboardingCard />}
               contentContainerStyle={{
                 paddingTop: 8,
