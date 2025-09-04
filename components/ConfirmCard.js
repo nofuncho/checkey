@@ -1,7 +1,8 @@
 // components/ConfirmCard.js
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, Pressable, Dimensions } from 'react-native';
 import dayjs from 'dayjs';
+import { Swipeable } from 'react-native-gesture-handler';
 
 // 🔒 안전한 Date 변환 (Firestore Timestamp/number/string 모두 지원)
 function toDateSafe(v) {
@@ -13,17 +14,31 @@ function toDateSafe(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-export default function ConfirmCard({ card, onConfirm, onCancel }) {
+// ✅ 항상 고유 key 보장
+function getTaskKey(task, index) {
+  const id = task?.taskId || task?.id;
+  if (id) return `t:${String(id)}`;
+  const title =
+    (typeof task === 'string' ? task : (task?.title ?? '')).toString().trim() || '(untitled)';
+  return `t:${title}:${index}`;
+}
+
+export default function ConfirmCard({
+  card,
+  onConfirm,
+  onCancel,
+  messageId,       // 이 카드 메시지 id (있으면 콜백에 전달)
+  // ✅ Task용 콜백 (부모에서 주입)
+  onTaskComplete,  // (taskObj, cardMessageId?) => void  // 탭 시 완료 토글
+  onTaskDelete,    // (taskObj, cardMessageId?) => void  // 왼쪽 스와이프
+  onTaskSnooze,    // (taskObj, cardMessageId?) => void  // 오른쪽 스와이프(내일로)
+}) {
   if (!card) return null;
 
   const hasTasks = Array.isArray(card.tasks) && card.tasks.length > 0;
   const isSchedule = card.type === 'schedule' || !!card.startTime;
   const isTask = card.type === 'task' || hasTasks;
   const isBoth = (card.type || '').toLowerCase() === 'both' || (isSchedule && hasTasks);
-
-  const [checks, setChecks] = useState((card.tasks || []).map(() => true));
-  const toggleCheck = (i) => setChecks((prev) => prev.map((c, idx) => (i === idx ? !c : c)));
-  const selectedTasks = (card.tasks || []).filter((_, i) => checks[i]);
 
   // ===== 고정 너비 계산 =====
   const { width: SCREEN_W } = Dimensions.get('window');
@@ -36,7 +51,13 @@ export default function ConfirmCard({ card, onConfirm, onCancel }) {
     [SCREEN_W]
   );
 
-  // 체키(assistant) 버블: 좌상단 r=0, #FAFAFA, 그림자 없음, 너비 고정
+  // ✅ 로컬 비활성 상태 저장: { [rowKey]: { reason: 'deleted'|'snoozed' } }
+  const [disabledMap, setDisabledMap] = useState({});
+
+  // ✅ '등록' 중복 탭 방지 플래그
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 체키(assistant) 버블: 좌상단 r=0, #FAFAFA, 너비 고정
   const Bubble = ({ children }) => (
     <View
       style={{
@@ -48,48 +69,63 @@ export default function ConfirmCard({ card, onConfirm, onCancel }) {
         backgroundColor: '#FAFAFA',
         borderRadius: 16,
         borderTopLeftRadius: 0,
+        overflow: 'visible',
       }}
     >
       {children}
     </View>
   );
 
-  // 버튼: 취소 < 등록(가로 더 큼), 높이 고정
+  // 버튼: 취소 < 등록(가로 더 큼), 높이 고정 — ❗일정 카드에서만 사용
   const Buttons = () => (
     <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
       <Pressable
         onPress={onCancel}
+        disabled={isSubmitting} // 등록 진행 중엔 취소도 잠깐 막아 깔끔하게 처리
         style={{
           flex: 1,
-          height: 48,                  // ★ 높이 고정
+          height: 48,
           borderRadius: 12,
           backgroundColor: '#EDEDED',
           alignItems: 'center',
           justifyContent: 'center',
+          opacity: isSubmitting ? 0.6 : 1,
         }}
+        accessibilityState={{ disabled: isSubmitting }}
+        accessibilityLabel="취소"
       >
         <Text style={{ fontWeight: '600', color: '#111' }}>취소</Text>
       </Pressable>
 
       <Pressable
         onPress={() => {
+          if (isSubmitting) return; // 🔒 이중 탭 방지
+          setIsSubmitting(true);
           const extra = isBoth
             ? { mode: 'both', selectedTasks: card.tasks || [] }
             : isSchedule
             ? { mode: 'schedule', selectedTasks: [] }
-            : { mode: 'task', selectedTasks };
+            : { mode: 'task', selectedTasks: [] };
+          // 부모에서 저장/동기화 후 카드가 사라질 것으로 가정
+          // (안 사라지는 경우에도 중복 저장 방지를 위해 버튼은 잠금 유지)
           onConfirm?.(card, extra);
         }}
+        disabled={isSubmitting}
         style={{
-          flex: 1.4,                   // ★ 등록 가로 더 넓게
-          height: 48,                  // ★ 높이 고정
+          flex: 1.4,
+          height: 48,
           borderRadius: 12,
           backgroundColor: '#111',
           alignItems: 'center',
           justifyContent: 'center',
+          opacity: isSubmitting ? 0.6 : 1,
         }}
+        accessibilityState={{ disabled: isSubmitting }}
+        accessibilityLabel="등록"
       >
-        <Text style={{ fontWeight: '700', color: '#fff' }}>등록</Text>
+        <Text style={{ fontWeight: '700', color: '#fff' }}>
+          {isSubmitting ? '등록 완료' : '등록'}
+        </Text>
       </Pressable>
     </View>
   );
@@ -100,7 +136,7 @@ export default function ConfirmCard({ card, onConfirm, onCancel }) {
     </Text>
   );
 
-  // 일정 카드
+  // ===== 일정 카드
   const ScheduleBlock = () => {
     const dt = toDateSafe(card.startTime);
     return (
@@ -128,79 +164,225 @@ export default function ConfirmCard({ card, onConfirm, onCancel }) {
     );
   };
 
-  // 할 일 카드 — 버블 내부 흰 박스 컨테이너 + 체크
-  const TasksBlock = () => (
-    <Bubble>
-      <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>
-        오늘의 할 일에 추가할게!
-      </Text>
-      <Text style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
-        예상 소요시간이 짧으면 바로 리마인드도 줄게, 빠르게 끝내보자!
-      </Text>
+  // ===== 체크박스 (미체크: 검정 테두리, 체크: 초록 배경+테두리+흰 체크)
+  const Checkbox = ({ checked }) => (
+    <View
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 5,
+        borderWidth: 2,
+        borderColor: checked ? '#22c55e' : '#111',
+        backgroundColor: checked ? '#22c55e' : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 10,
+        marginTop: 1,
+        marginLeft: 6,
+      }}
+    >
+      {checked ? (
+        <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', lineHeight: 12 }}>
+          ✓
+        </Text>
+      ) : null}
+    </View>
+  );
 
+  // ===== 스와이프 액션 (폭 고정)
+  const ACTION_W = 104;
+  const LeftAction = () => (
+    <View
+      style={{
+        width: ACTION_W,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        paddingHorizontal: 16,
+        backgroundColor: '#ef4444',
+        height: '100%',
+        borderRadius: 12,
+      }}
+    >
+      <Text style={{ color: '#fff', fontWeight: '700' }}>삭제</Text>
+    </View>
+  );
+  const RightAction = () => (
+    <View
+      style={{
+        width: ACTION_W,
+        justifyContent: 'center',
+        alignItems: 'flex-end',
+        paddingHorizontal: 16,
+        backgroundColor: '#3b82f6',
+        height: '100%',
+        borderRadius: 12,
+      }}
+    >
+      <Text style={{ color: '#fff', fontWeight: '700' }}>내일하기</Text>
+    </View>
+  );
+
+  // ===== 비활성(잠금) 행
+  const DisabledRow = ({ title, reason }) => (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        backgroundColor: '#F3F4F6',
+        opacity: 0.9,
+        borderRadius: 12,
+      }}
+      pointerEvents="none"
+    >
       <View
         style={{
-          backgroundColor: '#FFFFFF',
-          borderWidth: 1,
-          borderColor: '#EEE',
-          borderRadius: 14,
-          padding: 10,
-          gap: 10,
+          width: 16,
+          height: 16,
+          borderRadius: 5,
+          borderWidth: 2,
+          borderColor: '#D1D5DB',
+          backgroundColor: '#E5E7EB',
+          marginRight: 10,
+          marginLeft: 6,
+        }}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15.5, fontWeight: '600', color: '#9ca3af' }} numberOfLines={2}>
+          {title}
+        </Text>
+        <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+          {reason === 'deleted' ? '삭제됨' : '내일로 미뤄짐'}
+        </Text>
+      </View>
+    </View>
+  );
+
+  // ===== 개별 Task Row (스와이프/탭)
+  const TaskRow = ({ task, index, total }) => {
+    let swipeRef = null;
+
+    const rowKey = getTaskKey(task, index);
+    const disabledInfo = disabledMap[rowKey];
+
+    // task 객체 정규화
+    const title =
+      (typeof task === 'string' ? task : (task?.title ?? '')).toString().trim() || '(제목 없음)';
+    const completed = !!task?.completed;
+    const est = Number.isFinite(task?.estimatedDurationMinutes)
+      ? task.estimatedDurationMinutes
+      : 5;
+
+    if (disabledInfo) {
+      return <DisabledRow title={title} reason={disabledInfo.reason} />;
+    }
+
+    return (
+      <Swipeable
+        key={rowKey}
+        ref={(ref) => (swipeRef = ref)}
+        renderLeftActions={LeftAction}
+        renderRightActions={RightAction}
+        // ✅ 더 부드럽게: threshold 낮춤 + friction 완화
+        leftThreshold={40}
+        rightThreshold={40}
+        friction={1.5}
+        overshootFriction={6}
+        overshootLeft={false}
+        overshootRight={false}
+        containerStyle={{ overflow: 'visible' }}
+        // ✅ 방향별 콜백: 열리는 즉시 잠금 전환 + 다음 프레임에 close()
+        onSwipeableLeftOpen={() => {
+          setDisabledMap((prev) => ({ ...prev, [rowKey]: { reason: 'deleted' } }));
+          requestAnimationFrame(() => swipeRef?.close?.());
+          onTaskDelete?.(task, messageId);
+        }}
+        onSwipeableRightOpen={() => {
+          setDisabledMap((prev) => ({ ...prev, [rowKey]: { reason: 'snoozed' } }));
+          requestAnimationFrame(() => swipeRef?.close?.());
+          onTaskSnooze?.(task, messageId);
         }}
       >
-        {hasTasks ? (
-          (card.tasks || []).map((t, idx) => (
-            <Pressable
-              key={`${t?.id || (typeof t === 'string' ? t : t?.title) || idx}`}
-              onPress={() => toggleCheck(idx)}
+        <Pressable
+          onPress={() => {
+            onTaskComplete?.(task, messageId);
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 10,
+            paddingHorizontal: 12,     // ✅ 왼쪽 패딩 살짝 증가
+            borderBottomWidth: index < total - 1 ? 0.5 : 0,
+            borderColor: '#e5e7eb',
+            backgroundColor: '#fff',
+            borderRadius: 12,
+          }}
+        >
+          <Checkbox checked={completed} />
+          <View style={{ flex: 1 }}>
+            <Text
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 12,
-                paddingHorizontal: 12,
-                borderRadius: 10,
-                backgroundColor: '#FFFFFF',
-                borderWidth: 1,
-                borderColor: '#E9E9E9',
-                gap: 10,
+                fontSize: 15.5,
+                fontWeight: '600',
+                color: completed ? '#9ca3af' : '#111827',
+                textDecorationLine: completed ? 'line-through' : 'none',
               }}
+              numberOfLines={2}
             >
-              {/* 체크박스 */}
-              <View
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: 4,
-                  borderWidth: 1.5,
-                  borderColor: checks[idx] ? '#111' : '#BDBDBD',
-                  backgroundColor: checks[idx] ? '#111' : 'transparent',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {checks[idx] && (
-                  <View style={{ width: 8, height: 8, backgroundColor: '#fff', borderRadius: 2 }} />
-                )}
-              </View>
+              {title}
+            </Text>
+            {/* ⏱ XX분 소요 예정 (due 표시 제거) */}
+            <Text style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              ⏱ {est}분 소요 예정
+            </Text>
+          </View>
+        </Pressable>
+      </Swipeable>
+    );
+  };
 
-              {/* 제목(문자열/객체 모두 안전 표기) */}
-              <Text style={{ fontSize: 15, color: '#111', flexShrink: 1 }}>
-                {(typeof t === 'string' ? t : (t?.title ?? ''))
-                  .toString()
-                  .trim() || '(제목 없음)'}
-              </Text>
-            </Pressable>
-          ))
-        ) : (
-          <Text style={{ fontSize: 15, color: '#111', flexShrink: 1 }}>
-            {String(card.title ?? '').trim() || '(제목 없음)'}
-          </Text>
-        )}
-      </View>
+  // ===== 할 일 카드 — 스와이프/탭 (버튼 없음)
+  const TasksBlock = () => {
+    const tasks = hasTasks ? card.tasks : (card.title ? [{ title: card.title }] : []);
 
-      <Buttons />
-    </Bubble>
-  );
+    return (
+      <Bubble>
+        <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>
+          오늘의 할 일에 추가할게!
+        </Text>
+        <Text style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
+          짧은 일부터 하나씩 끝내보자. 스와이프/탭으로 관리할 수 있어.
+        </Text>
+
+        <View
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1,
+            borderColor: '#EEE',
+            borderRadius: 14,
+            overflow: 'hidden',
+          }}
+        >
+          {tasks.length > 0 ? (
+            tasks.map((t, i) => (
+              <TaskRow
+                key={getTaskKey(t, i)}
+                task={t}
+                index={i}
+                total={tasks.length}
+              />
+            ))
+          ) : (
+            <View style={{ padding: 12 }}>
+              <Text style={{ fontSize: 15, color: '#111' }}>(할 일 없음)</Text>
+            </View>
+          )}
+        </View>
+        {/* ✅ 버튼 제거 (Task 카드) */}
+      </Bubble>
+    );
+  };
 
   return (
     <View>

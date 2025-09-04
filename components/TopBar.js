@@ -1,63 +1,87 @@
 // components/TopBar.js
 import { View, Text, Image, Pressable, Alert } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
-  const isChat = pathname === '/' || pathname === '/index';
+  const insets = useSafeAreaInsets();
 
-  const handleFinderPress = () => {
-    Alert.alert('체키 파인더(베타)', '아직 준비 중이에요! 곧 열릴 예정입니다 😊');
+  const isActive = (path) => {
+    if ((path === '/' || path === '/index') && (pathname === '/' || pathname === '/index')) return true;
+    return pathname.startsWith(path);
   };
 
+  const BAR_H = 56;
+  const totalH = insets.top + BAR_H;
+
   return (
-    <LinearGradient
-      colors={['#ffffff', '#ffffff']} // 위=흰색, 아래=연한 회색
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
+    <View
+      pointerEvents="box-none"
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        gap: 20,
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        height: totalH,
+        zIndex: 100,
+        backgroundColor: 'transparent',
       }}
     >
-      {/* ✅ 로고 */}
-      <Image
-        source={require('../assets/logo.png')}
-        style={{ width: 32, height: 32, resizeMode: 'contain' }}
+      {/* 🔥 블러 배경 */}
+      <BlurView
+        tint="light"
+        intensity={40}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
-      {/* ✅ 체키 */}
-      <Pressable onPress={() => router.replace('/')}>
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: '700',
-            color: isChat ? '#000' : '#999',
-          }}
-        >
-          체키
-        </Text>
-      </Pressable>
+      <View
+        style={{
+          flex: 1,
+          paddingTop: insets.top,
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 20,
+        }}
+      >
+        <Image
+          source={require('../assets/logo.png')}
+          style={{ width: 28, height: 28, resizeMode: 'contain', marginRight: 8 }}
+        />
 
-      {/* ✅ 일정 찾기 */}
-      <Pressable onPress={handleFinderPress}>
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: '700',
-            color: isChat ? '#999' : '#000',
-          }}
-        >
-          일정 찾기
-        </Text>
-      </Pressable>
+        {/* 메인 */}
+        <Pressable onPress={() => router.replace('/')}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: isActive('/') ? '#111' : '#A3A3A3' }}>
+            체키
+          </Text>
+        </Pressable>
 
-      <View style={{ flex: 1 }} />
-    </LinearGradient>
+        {/* 캘린더 */}
+        <Pressable onPress={() => router.replace('/calendar')} style={{ marginLeft: 16 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: isActive('/calendar') ? '#111' : '#A3A3A3' }}>
+            캘린더
+          </Text>
+        </Pressable>
+
+        {/* 할 일 (todo.js와 연결) */}
+        <Pressable onPress={() => router.replace('/todo')} style={{ marginLeft: 16 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: isActive('/todo') ? '#111' : '#A3A3A3' }}>
+            할 일
+          </Text>
+        </Pressable>
+
+        {/* 파인더 (알림만) */}
+        <Pressable
+          onPress={() => Alert.alert('체키 파인더(베타)', '아직 준비 중이에요! 곧 열릴 예정입니다 😊')}
+          style={{ marginLeft: 16 }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#A3A3A3' }}>
+            일정 찾기
+          </Text>
+        </Pressable>
+
+        <View style={{ flex: 1 }} />
+      </View>
+    </View>
   );
 }

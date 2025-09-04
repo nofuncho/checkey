@@ -1,6 +1,7 @@
 // components/MessageBubble.js
 import { View, Text } from 'react-native';
-import ScheduleSummaryCard from './ScheduleSummaryCard'; // ✅ 추가
+import ScheduleSummaryCard from './ScheduleSummaryCard';
+import { useAppStore } from '../lib/store';
 
 export default function MessageBubble({ item }) {
   const isUser = item.role === 'user';
@@ -13,6 +14,11 @@ export default function MessageBubble({ item }) {
     marginVertical: 6,
     maxWidth: '84%',
   };
+
+  // ✅ store 액션 불러오기
+  const onTaskComplete = useAppStore((s) => s.onTaskComplete);
+  const onTaskDelete   = useAppStore((s) => s.onTaskDelete);
+  const onTaskSnooze   = useAppStore((s) => s.onTaskSnooze);
 
   // 사용자 메시지
   if (isUser) {
@@ -37,7 +43,18 @@ export default function MessageBubble({ item }) {
       <ScheduleSummaryCard
         title={item.card?.title}
         items={item.card?.items || []}
-        tasks={item.card?.tasks || []}   // ✅ tasks도 전달
+        tasks={item.card?.tasks || []}
+        messageId={item.id}
+        // 🔑 quiet 옵션을 그대로 전달할 수 있게 보존
+        onTaskComplete={(task, _msgId, opts) =>
+          onTaskComplete(task, item.id, { quiet: true, ...opts })
+        }
+        onTaskDelete={(task, _msgId, opts) =>
+          onTaskDelete(task, item.id, { quiet: true, ...opts })
+        }
+        onTaskSnooze={(task, _msgId, opts) =>
+          onTaskSnooze(task, item.id, { quiet: true, ...opts })
+        }
       />
     );
   }

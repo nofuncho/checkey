@@ -1,22 +1,26 @@
 // app/_layout.js
+import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaView } from 'react-native';
 import { Slot, usePathname } from 'expo-router';
 import TopBar from '../components/TopBar';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View } from 'react-native';
+import React from 'react';
 
 export default function Layout() {
   const pathname = usePathname();
-
-  // ✅ 어떤 그룹/경로 구조에서도 동작하도록 부분 일치로 체크
   const HIDE_SEGMENTS = ['login', 'signup', 'auth', 'onboarding'];
   const hideHeader = HIDE_SEGMENTS.some((seg) => pathname?.includes(seg));
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-        {!hideHeader && <TopBar />}
-        <Slot />
-      </SafeAreaView>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
+      <SafeAreaProvider>
+        <StatusBar style="dark" translucent backgroundColor="transparent" />
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+          {hideHeader ? null : <TopBar />}{/* ← 사이에 공백/주석 안 남기고 바로 이어붙임 */}<Slot />
+        </View>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

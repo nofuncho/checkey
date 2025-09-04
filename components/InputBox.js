@@ -1,8 +1,15 @@
-import { useState } from 'react';
-import { Pressable, Text, TextInput, View, Platform } from 'react-native';
+import { useState, useEffect } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-export default function InputBox({ onSend }) {
-  const [text, setText] = useState('');
+export default function InputBox({ onSend, initialValue = '' }) {
+  const [text, setText] = useState(initialValue);
+
+  // draft 값이 바뀔 때마다 반영
+  useEffect(() => {
+    if (initialValue !== undefined) {
+      setText(initialValue);
+    }
+  }, [initialValue]);
 
   const handleSend = () => {
     const v = text.trim();
